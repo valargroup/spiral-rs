@@ -461,7 +461,7 @@ pub fn sub_poly_into(params: &Params, res: &mut [u64], a: &[u64]) {
 
 pub fn invert_poly(params: &Params, res: &mut [u64], a: &[u64]) {
     for i in 0..params.poly_len {
-        res[i] = params.modulus - a[i];
+        res[i] = (params.modulus - a[i]) % params.modulus;
     }
 }
 
@@ -483,7 +483,7 @@ pub fn automorph_poly(params: &Params, res: &mut [u64], a: &[u64], t: usize) {
         if num % 2 == 0 {
             res[rem] = a[i];
         } else {
-            res[rem] = params.modulus - a[i];
+            res[rem] = (params.modulus - a[i]) % params.modulus;
         }
     }
 }
@@ -500,7 +500,7 @@ pub fn automorph_poly_uncrtd(params: &Params, res: &mut [u64], a: &[u64], t: usi
             if num % 2 == 0 {
                 res_chunk[rem] = a_chunk[i];
             } else {
-                res_chunk[rem] = params.moduli[m] - a_chunk[i];
+                res_chunk[rem] = (params.moduli[m] - a_chunk[i]) % params.moduli[m];
             }
         }
     }
@@ -1115,6 +1115,122 @@ mod test {
         let m3 = from_ntt_alloc(&m3_ntt);
         // 10*1 + 20*2 + 30*3 = 10 + 40 + 90 = 140
         assert_eq!(m3.get_poly(0, 0)[0], 140);
+    }
+
+    #[test]
+    fn invert_poly_zero_coeff_maps_to_zero() {
+        let params = get_params();
+        let poly_len = params.poly_len;
+        let mut a = vec![0u64; poly_len];
+        let mut res = vec![0u64; poly_len];
+
+        // all-zero input: every output coefficient must be 0, not modulus
+        invert_poly(&params, &mut res, &a);
+        for i in 0..poly_len {
+            assert_eq!(res[i], 0, "invert_poly produced out-of-range value at index {i}");
+        }
+
+        // non-zero input: result should satisfy a[i] + res[i] == modulus
+        a[0] = 1;
+        a[1] = params.modulus - 1;
+        a[2] = params.modulus / 2;
+        invert_poly(&params, &mut res, &a);
+        assert_eq!(res[0], params.modulus - 1);
+        assert_eq!(res[1], 1);
+        assert_eq!(res[2], params.modulus - params.modulus / 2);
+        for i in 0..poly_len {
+            assert!(res[i] < params.modulus, "coefficient {i} out of range");
+        }
+    }
+
+    #[test]
+    fn automorph_poly_zero_coeff_maps_to_zero() {
+        let params = get_params();
+        let poly_len = params.poly_len;
+        let mut a = vec![0u64; poly_len];
+        let mut res = vec![0u64; poly_len];
+
+        // t=3 forces some coefficients through the negation branch (num % 2 == 1).
+        // With an all-zero input, every output must still be 0.
+        let t = 3;
+        automorph_poly(&params, &mut res, &a, t);
+        for i in 0..poly_len {
+            assert_eq!(res[i], 0, "automorph_poly produced out-of-range value at index {i}");
+        }
+
+        // single non-zero coefficient placed so it lands in the negation branch
+        a[1] = 5;
+        automorph_poly(&params, &mut res, &a, t);
+        for i in 0..poly_len {
+            assert!(res[i] < params.modulus, "coefficient {i} out of range");
+        }
+        // a[1] maps to index (1*3) % poly_len = 3, with num = (1*3)/poly_len = 0 (even),
+        // so res[3] == a[1] (no negation for this particular index).
+        assert_eq!(res[3], 5);
+
+        // coefficient that does hit the negation branch:
+        // i such that (i * t) / poly_len is odd. With t=3, i=poly_len/3+1 should work
+        // when poly_len is large enough. Instead, just verify the range invariant.
+        let mut a_full = vec![0u64; poly_len];
+        for i in 0..poly_len {
+            a_full[i] = (i as u64) % params.modulus;
+        }
+        automorph_poly(&params, &mut res, &a_full, t);
+        for i in 0..poly_len {
+            assert!(res[i] < params.modulus, "coefficient {i} out of range for full input");
+        }
+    }
+
+    #[test]
+    fn automorph_poly_uncrtd_zero_coeff_maps_to_zero() {
+        let params = get_params();
+        let poly_len = params.poly_len;
+        let total_len = params.crt_count * poly_len;
+        let a = vec![0u64; total_len];
+        let mut res = vec![0u64; total_len];
+
+        let t = 3;
+        automorph_poly_uncrtd(&params, &mut res, &a, t);
+        for m in 0..params.crt_count {
+            for i in 0..poly_len {
+                let idx = m * poly_len + i;
+                assert_eq!(res[idx], 0,
+                    "automorph_poly_uncrtd produced out-of-range value at crt={m}, index={i}");
+            }
+        }
+
+        // non-zero input: verify all outputs are within [0, moduli[m])
+        let mut a_full = vec![0u64; total_len];
+        for m in 0..params.crt_count {
+            for i in 0..poly_len {
+                a_full[m * poly_len + i] = (i as u64) % params.moduli[m];
+            }
+        }
+        automorph_poly_uncrtd(&params, &mut res, &a_full, t);
+        for m in 0..params.crt_count {
+            for i in 0..poly_len {
+                let idx = m * poly_len + i;
+                assert!(res[idx] < params.moduli[m],
+                    "coefficient crt={m}, index={i} out of range: {} >= {}",
+                    res[idx], params.moduli[m]);
+            }
+        }
+    }
+
+    #[test]
+    fn invert_is_self_inverse() {
+        let params = get_params();
+        let mut m1 = PolyMatrixRaw::zero(&params, 1, 1);
+        m1.get_poly_mut(0, 0)[0] = 0;
+        m1.get_poly_mut(0, 0)[1] = 42;
+        m1.get_poly_mut(0, 0)[2] = params.modulus - 1;
+
+        let m2 = -&m1;
+        let m3 = -&m2;
+        for i in 0..params.poly_len {
+            assert_eq!(m1.get_poly(0, 0)[i], m3.get_poly(0, 0)[i],
+                "double negation should be identity at index {i}");
+        }
     }
 
     #[test]
