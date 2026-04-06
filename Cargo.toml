@@ -1,15 +1,15 @@
 [package]
-name = "spiral-rs"
-version = "0.4.0"
+name = "valar-spiral-rs"
+version = "0.5.0"
 edition = "2021"
 authors = ["Samir Menon <menon.samir@gmail.com>"]
-homepage = "https://github.com/menonsamir/spiral-rs"
-repository = "https://github.com/menonsamir/spiral-rs"
-description = "Rust implementation of the Spiral PIR scheme"
+homepage = "https://github.com/valargroup/spiral-rs"
+repository = "https://github.com/valargroup/spiral-rs"
+description = "Fork of spiral-rs: Rust implementation of the Spiral PIR scheme"
 keywords = ["privacy", "fhe", "cryptography"]
 categories = ["cryptography"]
 readme = "README.md"
-license = "MIT"
+license = "MIT OR Apache-2.0"
 
 [features]
 default = []
