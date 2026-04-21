@@ -1,6 +1,6 @@
 [package]
 name = "valar-spiral-rs"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 authors = ["Samir Menon <menon.samir@gmail.com>"]
 homepage = "https://github.com/valargroup/spiral-rs"
