@@ -1,5 +1,4 @@
-#![cfg_attr(target_feature = "avx512f", feature(avx512_target_feature))]
-#![cfg_attr(target_feature = "avx512f", feature(stdarch_x86_avx512))]
+// AVX-512 intrinsics and target features are stable since Rust 1.89; no feature gates needed.
 
 pub mod aligned_memory;
 pub mod arith;
